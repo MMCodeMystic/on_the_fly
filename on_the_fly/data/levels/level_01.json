@@ -1,0 +1,26 @@
+{
+  "start_room": "kitchen",
+  "goal_room": "living",
+  "rooms": [
+    {
+      "name": "kitchen",
+      "size": [400, 300],
+      "spawn": [50, 150],
+      "doors": [
+        {"pos": [400, 150], "size": [30, 80], "target": "living"}
+      ],
+      "obstacles": [
+        {"pos": [200, 50], "size": [60, 20], "kind": "static"}
+      ]
+    },
+    {
+      "name": "living",
+      "size": [400, 300],
+      "spawn": [50, 150],
+      "doors": [
+        {"pos": [0, 150], "size": [30, 80], "target": "kitchen"}
+      ],
+      "obstacles": []
+    }
+  ]
+}   

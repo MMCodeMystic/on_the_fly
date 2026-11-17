@@ -14,6 +14,7 @@ from core.room import Room, Door
 from core.state import FlyState, NPCState
 from core.events import EventBus, Event, GameEvent
 from core.interaction import InteractionSystem
+from core.scoring import Score
 
 # Renderer (austauschbar)
 from renderer.pygame_renderer import PygameRenderer
@@ -85,18 +86,7 @@ async def main():
     level = build_test_level()
     event_bus = EventBus()
     interactions = InteractionSystem(event_bus)
-
-    def on_fly_hit(event: Event):
-        print(f"💥 Fliege getroffen! Benommen für {level.fly.stun_timer:.1f}s")
-    event_bus.subscribe(GameEvent.FLY_HIT, on_fly_hit)
-
-    def on_door_open(event: Event):
-        print(f"🚪 Tür '{event.data.get('door')}' geöffnet!")
-    event_bus.subscribe(GameEvent.DOOR_OPENED, on_door_open)
-
-    def on_door_transition(event: Event):
-        print(f"➡️  Raumwechsel → {event.data.get('target')}")
-    event_bus.subscribe(GameEvent.FLY_ENTERED_DOOR, on_door_transition)
+    score = Score()
 
     running = True
     while running:
@@ -109,46 +99,59 @@ async def main():
             running = False
             break
 
-        # --- Update ---
         level.fly.update(dt, direction)
-
         room = level.get_current_room()
+
         if room:
-            # NPCs aktualisieren (mit Fliegen-Position für Jagd)
+            # NPCs
             for npc in room.npcs:
                 npc.update(dt, fly_pos=level.fly.pos, doors=room.doors)
 
-            # Jagd-Check
+            # Jagd-Check + Score
+            chasing = False
             if level.fly.state == FlyState.FREE_FLIGHT:
                 for npc in room.npcs:
                     if not npc.is_chasing and npc.perceive_fly(level.fly.pos):
                         npc.start_chase()
-                        event_bus.publish(Event(GameEvent.NPC_STARTED_CHASING,
-                                                {"npc": npc.name}))
-                        print(f"🏃 {npc.name} jagt die Fliege!")
+                        print(f"🏃 {npc.name} jagt!")
 
-                    # Treffer-Check während Jagd
                     if npc.is_chasing:
+                        chasing = True
                         dx = level.fly.pos[0] - npc.pos[0]
                         dy = level.fly.pos[1] - npc.pos[1]
                         if (dx**2 + dy**2) ** 0.5 < 20:
                             level.fly.get_hit()
                             npc.is_chasing = False
                             npc.state = NPCState.WALKING
-                            event_bus.publish(Event(GameEvent.FLY_HIT, {}))
+                            score.on_caught()
+                            print(f"💥 -{abs(score.PTS_CAUGHT)} Punkte")
+
+            # Jagd-Punkte (Überleben)
+            if chasing and level.fly.state == FlyState.FREE_FLIGHT:
+                score.on_chase_tick(dt)
+
+            # Tür-Treffer (geschlossene Tür)
+            for door in room.doors:
+                if door.is_hit(level.fly.pos):
+                    score.on_door_hit()
+                    # Fliege abprallen
+                    level.fly.pos = (
+                        level.fly.pos[0] - (1 if level.fly.pos[0] < door.pos[0] else -1) * 10,
+                        level.fly.pos[1],
+                    )
+                    print(f"🚫 Tür! -{abs(score.PTS_CLOSED_DOOR)} Punkte")
 
             # Türen aktualisieren
             level.update_doors(dt)
 
-            # Raumwechsel-Check
+            # Raumwechsel
             if level.check_door_transition():
-                event_bus.publish(Event(GameEvent.FLY_ENTERED_DOOR,
-                                        {"target": level.current_room_name}))
+                score.on_room_transition()
+                print(f"➡️  {level.current_room_name}! +{score.PTS_ROOM_TRANSITION} Punkte")
 
-        # Fliege klemmen (nur wenn kein Raumwechsel stattfand)
         level.clamp_fly_to_room()
 
-        # --- Aktionen ---
+        # Aktionen
         if action and room:
             nearest_npc = _find_nearest_npc(level.fly, room.npcs, radius=50)
             if action == "land" and nearest_npc:
@@ -160,8 +163,7 @@ async def main():
             elif action == "scare" and nearest_npc:
                 interactions.try_scare(level.fly, nearest_npc)
 
-        # --- Render ---
-        renderer.draw_frame(level, level.fly, dt)
+        renderer.draw_frame(level, level.fly, dt, score)
         await asyncio.sleep(0)
 
     renderer.quit()

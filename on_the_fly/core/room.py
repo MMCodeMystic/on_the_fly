@@ -43,7 +43,7 @@ class Door:
     is_open: bool = False
     open_timer: float = 0.0
     auto_close_time: float = 4.0
-    opened_by_npc: bool = True  # Nur NPC kann öffnen
+    opened_by_npc: bool = True
 
     def open(self, duration: float = None):
         self.is_open = True
@@ -53,4 +53,12 @@ class Door:
         if self.is_open:
             self.open_timer -= dt
             if self.open_timer <= 0:
-                self.is_open = False   
+                self.is_open = False
+
+    def is_hit(self, pos: tuple[float, float]) -> bool:
+        """Fliege berührt die Tür (nur wenn ZU)."""
+        if self.is_open:
+            return False
+        dx = abs(pos[0] - self.pos[0])
+        dy = abs(pos[1] - self.pos[1])
+        return dx < self.size[0] / 2 + 5 and dy < self.size[1] / 2 + 5   
